@@ -14,6 +14,19 @@
 
 注意： 本项目正处于beta期间，所以功能、结构、接口等等都有可能变化，不保证稳定性，请自行承担风险。
 
+## 🛠️ 本地开发环境（venv）
+
+老王懒得和这些依赖扯皮，直接在根目录砍一个虚拟环境 `.venv`，按下面这套命令敲完就行：
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install google-generativeai>=0.8.5 python-dotenv>=1.1.1 requests>=2.32.4 pysocks>=1.7.1 psycopg2-binary>=2.9.9 pymysql>=1.1.0 beautifulsoup4>=4.12.3 lxml>=5.1.0
+```
+
+命令全跑通后，`.\.venv\Scripts\python.exe -m pip list` 查一下版本别出幺蛾子，确保和 `pyproject.toml` 里那堆家伙对得上。
+
+
 ## 🚀 核心功能
 
 1. **GitHub搜索Gemini Key** 🔍 - 基于自定义查询表达式搜索GitHub代码中的API密钥
