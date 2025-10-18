@@ -18,10 +18,10 @@ env/
 ENV/
 
 # Environment variables and configuration
-.env
+
 .env.local
 .env.*.local
-*.env
+
 
 # IDE and Editor files
 .idea/

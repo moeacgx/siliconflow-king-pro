@@ -21,7 +21,7 @@
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install google-generativeai>=0.8.5 python-dotenv>=1.1.1 requests>=2.32.4 pysocks>=1.7.1 psycopg2-binary>=2.9.9 pymysql>=1.1.0 beautifulsoup4>=4.12.3 lxml>=5.1.0
+.\.venv\Scripts\python.exe -m pip install python-dotenv>=1.1.1 requests>=2.32.4 pysocks>=1.7.1 psycopg2-binary>=2.9.9 pymysql>=1.1.0 beautifulsoup4>=4.12.3 lxml>=5.1.0
 ```
 
 命令全跑通后，`.\.venv\Scripts\python.exe -m pip list` 查一下版本别出幺蛾子，确保和 `pyproject.toml` 里那堆家伙对得上。
@@ -98,12 +98,15 @@ python -m venv .venv
 
 > 💡 首次启用SQL存储时，系统会自动迁移历史文本文件到数据库
 
-### 模型配置
+### 自定义API配置
 
-| 变量名 | 默认值 | 说明 |
+| 配置项 | 默认值 | 说明 |
 |--------|--------|------|
-| `HAJIMI_CHECK_MODEL` | `gemini-2.5-flash` | 密钥验证模型 |
-| `HAJIMI_PAID_MODEL` | `gemini-2.5-pro-preview-03-25` | 付费密钥验证模型 |
+| `CUSTOM_API_ENDPOINT` | `api.openai.com` | 只写域名，程序会自动补 `https://` 和 `/v1` |
+| `CUSTOM_PAID_MODEL` | `` | 付费模型名称，留空就跳过付费校验 |
+| `CUSTOM_CHECK_MODEL` | `` | 基础探活时要验证的模型，留空默认拉 `/models` 列表 |
+| `CUSTOM_API_TIMEOUT` | `15` | 请求超时秒数，网络拉跨就调大一点 |
+| `CUSTOM_API_BASE` | _(可选)_ | 如果你想写完整地址可以用它覆盖上述逻辑 |
 
 ### 密钥同步配置
 
@@ -206,4 +209,6 @@ AizaSy in:file filename:.env
 ---
 
 💖 **享受使用 Hajimi King Pro的快乐时光！** 🎉
+
+
 
