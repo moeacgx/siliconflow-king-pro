@@ -5,10 +5,9 @@ import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions
+import requests
 
 from common.Logger import logger
 from common.config import Config
@@ -82,95 +81,163 @@ class KeyValidator:
         with self.stats_lock:
             self.stats["total_queued"] += 1
 
-    def _validate_gemini_key(self, api_key: str) -> Union[bool, str]:
-        """
-        验证 Gemini API 密钥
-        
-        Args:
-            api_key: Gemini API密钥
-            
-        Returns:
-            "ok" 表示有效，其他字符串表示失败原因
-        """
+    def _build_headers(self, api_key: str) -> Dict[str, str]:
+        """构造 API 请求头，别乱加奇怪字段。"""
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "User-Agent": "HajimiKing/1.0",
+        }
+        return headers
+
+    def _perform_request(
+        self,
+        url: str,
+        api_key: str,
+        method: str = "GET",
+        json_payload: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Optional[requests.Response], Optional[str]]:
+        """执行带鉴权请求，返回 (响应, 错误码)。"""
+        proxies = Config.get_random_proxy()
+        headers = self._build_headers(api_key)
+
+        try:
+            if json_payload is not None:
+                headers.setdefault("Content-Type", "application/json")
+
+            response = requests.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=json_payload,
+                timeout=Config.CUSTOM_API_TIMEOUT,
+                proxies=proxies,
+            )
+            return response, None
+        except requests.exceptions.Timeout:
+            return None, "timeout"
+        except requests.exceptions.ProxyError:
+            return None, "proxy_error"
+        except requests.exceptions.ConnectionError:
+            return None, "connection_error"
+        except requests.exceptions.RequestException as exc:
+            return None, f"error:{exc.__class__.__name__}"
+
+    def _validate_api_key(self, api_key: str) -> Union[str, str]:
+        """验证是否能打通自定义 API 基础入口。"""
+        base_url = Config.CUSTOM_API_BASE
+        if not base_url:
+            return "invalid_api_base"
+
         try:
             time.sleep(random.uniform(0.5, 1.5))
+            check_model = Config.CUSTOM_CHECK_MODEL or Config.CUSTOM_PAID_MODEL
+            if not check_model:
+                logger.warning("⚠️ 未配置 CUSTOM_CHECK_MODEL 或 CUSTOM_PAID_MODEL，无法通过 chat/completions 验证密钥")
+                return "missing_check_model"
 
-            # 获取随机代理配置
-            proxy_config = Config.get_random_proxy()
-            
-            client_options = {
-                "api_endpoint": "generativelanguage.googleapis.com"
+            payload = {
+                "model": check_model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 8,
+                "stream": False,
             }
-            
-            # 如果有代理配置，添加到client_options中
-            if proxy_config:
-                os.environ['grpc_proxy'] = proxy_config.get('http')
+            response, error = self._perform_request(f"{base_url}/chat/completions", api_key, method="POST", json_payload=payload)
+            if error:
+                return error
 
-            genai.configure(
-                api_key=api_key,
-                client_options=client_options,
-            )
+            status = response.status_code
+            if status in (200, 201):
+                try:
+                    data = response.json()
+                except ValueError:
+                    logger.error(f"🔥 API密钥验证返回非 JSON: status={status}")
+                    return "error:invalid_json"
 
-            model = genai.GenerativeModel(Config.HAJIMI_CHECK_MODEL)
-            response = model.generate_content("hi")
-            return "ok"
-        except (google_exceptions.PermissionDenied, google_exceptions.Unauthenticated) as e:
-            return "not_authorized_key"
-        except google_exceptions.TooManyRequests as e:
-            return "rate_limited"
-        except Exception as e:
-            if "429" in str(e) or "rate limit" in str(e).lower() or "quota" in str(e).lower():
-                return "rate_limited:429"
-            elif "403" in str(e) or "SERVICE_DISABLED" in str(e) or "API has not been used" in str(e):
+                if not isinstance(data, dict):
+                    logger.error(f"🔥 API密钥验证返回异常结构: status={status}, type={type(data)}")
+                    return "error:invalid_payload"
+
+                if data.get("error"):
+                    error_info = data["error"]
+                    if isinstance(error_info, dict):
+                        code = error_info.get("code") or error_info.get("type") or "unknown_error"
+                        return f"error:{code}"
+                    return f"error:{error_info}"
+
+                if not data.get("choices"):
+                    logger.error(f"🔥 API密钥验证缺少 choices 字段: status={status}")
+                    return "error:missing_choices"
+                return "ok"
+            if status == 401:
+                return "not_authorized_key"
+            if status == 403:
                 return "disabled"
-            else:
-                return f"error:{e.__class__.__name__}"
-
-    def _validate_paid_model_key(self, api_key: str) -> Union[bool, str]:
-        """
-        验证密钥是否支持付费模型
-        
-        Args:
-            api_key: Gemini API密钥
-            
-        Returns:
-            "ok" 表示付费模型可用，其他字符串表示验证失败的原因
-        """
-        try:
-            time.sleep(random.uniform(0.5, 1.5))
-
-            # 获取随机代理配置
-            proxy_config = Config.get_random_proxy()
-            
-            client_options = {
-                "api_endpoint": "generativelanguage.googleapis.com"
-            }
-            
-            # 如果有代理配置，添加到client_options中
-            if proxy_config:
-                os.environ['grpc_proxy'] = proxy_config.get('http')
-
-            genai.configure(
-                api_key=api_key,
-                client_options=client_options,
-            )
-
-            model = genai.GenerativeModel(Config.HAJIMI_PAID_MODEL)
-            response = model.generate_content("hi")
-            return "ok"
-        except (google_exceptions.PermissionDenied, google_exceptions.Unauthenticated) as e:
-            return "not_authorized_for_paid"
-        except google_exceptions.TooManyRequests as e:
-            return "rate_limited"
-        except Exception as e:
-            if "429" in str(e) or "rate limit" in str(e).lower() or "quota" in str(e).lower():
-                return "rate_limited"
-            elif "403" in str(e) or "SERVICE_DISABLED" in str(e) or "API has not been used" in str(e):
-                return "disabled"
-            elif "not found" in str(e).lower() or "404" in str(e):
+            if status == 404:
                 return "model_not_found"
-            else:
-                return f"error:{e.__class__.__name__}"
+            if status == 429:
+                return "rate_limited"
+            return f"http_{status}"
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"🔥 API密钥验证崩了: {exc}")
+            return "error:unexpected"
+
+    def _validate_paid_model_key(self, api_key: str) -> Union[str, str]:
+        """验证密钥是否支持付费模型。"""
+        paid_model = Config.CUSTOM_PAID_MODEL
+        if not paid_model:
+            return "skip"
+
+        base_url = Config.CUSTOM_API_BASE
+        if not base_url:
+            return "invalid_api_base"
+
+        try:
+            time.sleep(random.uniform(0.5, 1.5))
+            payload = {
+                "model": paid_model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 8,
+                "stream": False,
+            }
+            response, error = self._perform_request(f"{base_url}/chat/completions", api_key, method="POST", json_payload=payload)
+            if error:
+                return error
+
+            status = response.status_code
+            if status in (200, 201):
+                try:
+                    data = response.json()
+                except ValueError:
+                    logger.error(f"🔥 付费模型验证返回非 JSON: status={status}")
+                    return "error:invalid_json"
+
+                if not isinstance(data, dict):
+                    logger.error(f"🔥 付费模型验证返回异常结构: status={status}, type={type(data)}")
+                    return "error:invalid_payload"
+
+                if data.get("error"):
+                    error_info = data["error"]
+                    if isinstance(error_info, dict):
+                        code = error_info.get("code") or error_info.get("type") or "unknown_error"
+                        return f"error:{code}"
+                    return f"error:{error_info}"
+
+                if not data.get("choices"):
+                    logger.error(f"🔥 付费模型验证缺少 choices 字段: status={status}")
+                    return "error:missing_choices"
+                return "ok"
+            if status == 401:
+                return "not_authorized_for_paid"
+            if status == 403:
+                return "disabled"
+            if status == 404:
+                return "model_not_found"
+            if status == 429:
+                return "rate_limited"
+            return f"http_{status}"
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"🔥 付费模型验证崩了: {exc}")
+            return "error:unexpected"
 
     def _validation_worker(self, worker_id: int) -> None:
         """
@@ -195,7 +262,7 @@ class KeyValidator:
                 file_url = pending_key.file_url
                 
                 # 执行验证
-                validation_result = self._validate_gemini_key(key)
+                validation_result = self._validate_api_key(key)
                 
                 # 初始化结果存储
                 file_key = f"{repo_name}::{file_path}"
@@ -211,7 +278,7 @@ class KeyValidator:
                         }
                 
                 # 处理验证结果
-                if validation_result and "ok" in validation_result:
+                if validation_result == "ok":
                     # 有效密钥
                     logger.info(t('valid_key', key))
                     
@@ -224,14 +291,16 @@ class KeyValidator:
                     # 对有效密钥进行付费模型验证
                     logger.info(f"🔍 正在验证付费模型: {key[:20]}...")
                     paid_validation_result = self._validate_paid_model_key(key)
-                    if paid_validation_result and "ok" in paid_validation_result:
-                        logger.info(f"💎 付费密钥验证成功: {key[:20]}... (支持{Config.HAJIMI_PAID_MODEL})")
+                    if paid_validation_result == "ok":
+                        logger.info(f"💎 付费密钥验证成功: {key[:20]}... (支持{Config.CUSTOM_PAID_MODEL})")
                         
                         with self.results_lock:
                             self.results_by_file[file_key]["paid_keys"].append(key)
                         
                         with self.stats_lock:
                             self.stats["paid_keys"] += 1
+                    elif paid_validation_result == "skip":
+                        logger.info(f"🧪 付费模型验证跳过: {key[:20]}... (未配置 CUSTOM_PAID_MODEL)")
                     else:
                         logger.info(f"ℹ️ 付费模型验证失败: {key[:20]}... ({paid_validation_result})")
                 
@@ -442,4 +511,6 @@ class KeyValidator:
 
 # 创建全局实例（从配置读取并发数）
 key_validator = KeyValidator(max_workers=Config.KEY_VALIDATOR_MAX_WORKERS)
+
+
 

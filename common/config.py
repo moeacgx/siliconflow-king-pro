@@ -75,9 +75,25 @@ class Config:
     # 已扫描SHA文件配置
     SCANNED_SHAS_FILE = os.getenv("SCANNED_SHAS_FILE", "scanned_shas.txt")
 
-    # Gemini模型配置
-    HAJIMI_CHECK_MODEL = os.getenv("HAJIMI_CHECK_MODEL", "gemini-2.5-flash")
-    HAJIMI_PAID_MODEL = os.getenv("HAJIMI_PAID_MODEL", "gemini-2.0-flash-thinking-exp-01-21")
+    # 自定义API配置
+    _custom_api_base_env = os.getenv("CUSTOM_API_BASE", "").strip()
+    _custom_api_endpoint_env = os.getenv("CUSTOM_API_ENDPOINT", "").strip()
+    if _custom_api_base_env:
+        CUSTOM_API_BASE = _custom_api_base_env.rstrip("/")
+    else:
+        endpoint = (_custom_api_endpoint_env or "api.openai.com").strip().rstrip("/")
+        if endpoint.startswith("http://") or endpoint.startswith("https://"):
+            endpoint_url = endpoint
+        else:
+            endpoint_url = f"https://{endpoint}"
+        endpoint_url = endpoint_url.rstrip("/")
+        if not endpoint_url.lower().endswith("/v1"):
+            endpoint_url = f"{endpoint_url}/v1"
+        CUSTOM_API_BASE = endpoint_url
+    CUSTOM_API_ENDPOINT = _custom_api_endpoint_env or (_custom_api_base_env or "api.openai.com")
+    CUSTOM_PAID_MODEL = os.getenv("CUSTOM_PAID_MODEL", "").strip()
+    CUSTOM_CHECK_MODEL = os.getenv("CUSTOM_CHECK_MODEL", "").strip()
+    CUSTOM_API_TIMEOUT = float(os.getenv("CUSTOM_API_TIMEOUT", "15"))
     
     # 异步验证配置
     KEY_VALIDATOR_MAX_WORKERS = int(os.getenv("KEY_VALIDATOR_MAX_WORKERS", "5"))
@@ -343,8 +359,11 @@ logger.info(f"PAID_KEY_DETAIL_PREFIX: {Config.PAID_KEY_DETAIL_PREFIX}")
 logger.info(f"DATE_RANGE_DAYS: {Config.DATE_RANGE_DAYS} days")
 logger.info(f"QUERIES_FILE: {Config.QUERIES_FILE}")
 logger.info(f"SCANNED_SHAS_FILE: {Config.SCANNED_SHAS_FILE}")
-logger.info(f"HAJIMI_CHECK_MODEL: {Config.HAJIMI_CHECK_MODEL}")
-logger.info(f"HAJIMI_PAID_MODEL: {Config.HAJIMI_PAID_MODEL}")
+logger.info(f"CUSTOM_API_ENDPOINT: {Config.CUSTOM_API_ENDPOINT}")
+logger.info(f"CUSTOM_API_BASE: {Config.CUSTOM_API_BASE}")
+logger.info(f"CUSTOM_PAID_MODEL: {Config.CUSTOM_PAID_MODEL or 'Not configured'}")
+logger.info(f"CUSTOM_CHECK_MODEL: {Config.CUSTOM_CHECK_MODEL or 'Not configured'}")
+logger.info(f"CUSTOM_API_TIMEOUT: {Config.CUSTOM_API_TIMEOUT}s")
 logger.info(f"FILE_PATH_BLACKLIST: {len(Config.FILE_PATH_BLACKLIST)} items")
 logger.info(f"FORCED_COOLDOWN_ENABLED: {Config.parse_bool(Config.FORCED_COOLDOWN_ENABLED)}")
 logger.info(f"FORCED_COOLDOWN_HOURS_PER_QUERY: {Config.FORCED_COOLDOWN_HOURS_PER_QUERY}")
@@ -371,3 +390,4 @@ logger.info(f"*" * 30 + " CONFIG END " + "*" * 30)
 
 # 创建全局配置实例
 config = Config()
+

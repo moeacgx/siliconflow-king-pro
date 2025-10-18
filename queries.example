@@ -2,4 +2,7 @@
 # 每行一个查询语句，支持GitHub搜索语法
 # 以#开头的行为注释，空行会被忽略
 
-AIzaSy in:file
+sk- in:file
+sk- in:file filename:.env
+OPENAI_API_KEY in:file
+api.openai.com in:file filename:config.py

@@ -11,8 +11,6 @@ from typing import Dict, List, Union, Any
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
-import google.generativeai as genai
-from google.api_core import exceptions as google_exceptions
 
 from common.Logger import logger
 from common.config import Config
@@ -89,7 +87,8 @@ def normalize_query(query: str) -> str:
 
 
 def extract_keys_from_content(content: str) -> List[str]:
-    pattern = r'(AIzaSy[A-Za-z0-9\-_]{33})'
+    pattern = r'(sk-[A-Za-z0-9]{20,})'
+
     return re.findall(pattern, content)
 
 
@@ -182,89 +181,6 @@ def process_item(item: Dict[str, Any]) -> int:
     logger.info(f"📥 已添加 {len(keys)} 个密钥到验证队列")
 
     return len(keys)
-
-
-def validate_gemini_key(api_key: str) -> Union[bool, str]:
-    try:
-        time.sleep(random.uniform(0.5, 1.5))
-
-        # 获取随机代理配置
-        proxy_config = Config.get_random_proxy()
-        
-        client_options = {
-            "api_endpoint": "generativelanguage.googleapis.com"
-        }
-        
-        # 如果有代理配置，添加到client_options中
-        if proxy_config:
-            os.environ['grpc_proxy'] = proxy_config.get('http')
-
-        genai.configure(
-            api_key=api_key,
-            client_options=client_options,
-        )
-
-        model = genai.GenerativeModel(Config.HAJIMI_CHECK_MODEL)
-        response = model.generate_content("hi")
-        return "ok"
-    except (google_exceptions.PermissionDenied, google_exceptions.Unauthenticated) as e:
-        return "not_authorized_key"
-    except google_exceptions.TooManyRequests as e:
-        return "rate_limited"
-    except Exception as e:
-        if "429" in str(e) or "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            return "rate_limited:429"
-        elif "403" in str(e) or "SERVICE_DISABLED" in str(e) or "API has not been used" in str(e):
-            return "disabled"
-        else:
-            return f"error:{e.__class__.__name__}"
-
-
-def validate_paid_model_key(api_key: str) -> Union[bool, str]:
-    """
-    验证密钥是否支持付费模型
-    
-    Args:
-        api_key: Gemini API密钥
-        
-    Returns:
-        "ok" 表示付费模型可用，其他字符串表示验证失败的原因
-    """
-    try:
-        time.sleep(random.uniform(0.5, 1.5))
-
-        # 获取随机代理配置
-        proxy_config = Config.get_random_proxy()
-        
-        client_options = {
-            "api_endpoint": "generativelanguage.googleapis.com"
-        }
-        
-        # 如果有代理配置，添加到client_options中
-        if proxy_config:
-            os.environ['grpc_proxy'] = proxy_config.get('http')
-
-        genai.configure(
-            api_key=api_key,
-            client_options=client_options,
-        )
-
-        model = genai.GenerativeModel(Config.HAJIMI_PAID_MODEL)
-        response = model.generate_content("hi")
-        return "ok"
-    except (google_exceptions.PermissionDenied, google_exceptions.Unauthenticated) as e:
-        return "not_authorized_for_paid"
-    except google_exceptions.TooManyRequests as e:
-        return "rate_limited"
-    except Exception as e:
-        if "429" in str(e) or "rate limit" in str(e).lower() or "quota" in str(e).lower():
-            return "rate_limited"
-        elif "403" in str(e) or "SERVICE_DISABLED" in str(e) or "API has not been used" in str(e):
-            return "disabled"
-        elif "not found" in str(e).lower() or "404" in str(e):
-            return "model_not_found"
-        else:
-            return f"error:{e.__class__.__name__}"
 
 
 def print_skip_stats():
